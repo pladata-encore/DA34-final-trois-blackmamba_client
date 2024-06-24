@@ -1,6 +1,6 @@
-import 'package:drivetalk/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:drivetalk/home_screen.dart';
 
 class CarSelectionScreen extends StatefulWidget {
   const CarSelectionScreen({super.key});
@@ -40,9 +40,26 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
     }
   }
 
+  Widget _buildDropdown<T>({
+    required String hint,
+    required T? value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: DropdownButton<T>(
+        hint: Text(hint),
+        value: value,
+        onChanged: onChanged,
+        items: items,
+        isExpanded: true,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 화면에 보이는 영역
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -52,9 +69,9 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
             SizedBox(height: 40),
             Center(
               child: Image.asset(
-                'assets/img/carselection.png', // 이미지 경로
-                width: MediaQuery.of(context).size.width * 0.4, // 이미지 너비 조절
-                height: 100, // 이미지 높이 조절
+                'assets/img/carselection.png',
+                width: MediaQuery.of(context).size.width * 0.4,
+                height: 100,
                 fit: BoxFit.cover,
               ),
             ),
@@ -64,80 +81,65 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
               child: Text(
                 '메뉴얼 정보를 안내 받을 차량을 선택하세요.',
                 style: TextStyle(
-                  fontSize: 25, // 폰트 크기
-                  fontWeight: FontWeight.bold, // 폰트 두께
-                  color: Colors.black, // 폰트 색상
+                  fontSize: 25,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: DropdownButton<String>(
-                hint: Text('제조사를 선택하세요.'),
-                value: _selectedCarCompany,
-                onChanged: (newValue) {
-                  setState(() {
-                    _selectedCarCompany = newValue;
-                    _selectedCarName = null;
-                    _selectedCarYear = null; // 제조사가 변경되면 차명와 연식 선택 초기화
-                  });
-                },
-                items: _carData.keys.map((carCompany) {
-                  return DropdownMenuItem<String>(
-                    value: carCompany,
-                    child: Text(carCompany),
-                  );
-                }).toList(),
-                isExpanded: true, // 가로 화면 꽉 채우기
-              ),
+            _buildDropdown<String>(
+              hint: '제조사를 선택하세요.',
+              value: _selectedCarCompany,
+              items: _carData.keys.map((carCompany) {
+                return DropdownMenuItem<String>(
+                  value: carCompany,
+                  child: Text(carCompany),
+                );
+              }).toList(),
+              onChanged: (newValue) {
+                setState(() {
+                  _selectedCarCompany = newValue;
+                  _selectedCarName = null;
+                  _selectedCarYear = null;
+                });
+              },
             ),
-            SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: DropdownButton<String>(
-                hint: Text('차량을 선택하세요.'),
-                value: _selectedCarName,
-                onChanged: (newValue) {
-                  setState(() {
-                    _selectedCarName = newValue;
-                    _selectedCarYear = null; // 차명이 변경되면 연식 선택 초기화
-                  });
-                },
-                items: _selectedCarCompany == null
-                    ? []
-                    : _carData[_selectedCarCompany]!.keys.map((carName) {
-                        return DropdownMenuItem<String>(
-                          value: carName,
-                          child: Text(carName),
-                        );
-                      }).toList(),
-                isExpanded: true, // 가로 화면 꽉 채우기
-              ),
+            _buildDropdown<String>(
+              hint: '차량을 선택하세요.',
+              value: _selectedCarName,
+              items: _selectedCarCompany == null
+                  ? []
+                  : _carData[_selectedCarCompany]!.keys.map((carName) {
+                      return DropdownMenuItem<String>(
+                        value: carName,
+                        child: Text(carName),
+                      );
+                    }).toList(),
+              onChanged: (newValue) {
+                setState(() {
+                  _selectedCarName = newValue;
+                  _selectedCarYear = null;
+                });
+              },
             ),
-            SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: DropdownButton<String>(
-                hint: Text('연식을 선택하세요.'),
-                value: _selectedCarYear,
-                onChanged: (newValue) {
-                  setState(() {
-                    _selectedCarYear = newValue;
-                  });
-                },
-                items: _selectedCarName == null
-                    ? []
-                    : _carData[_selectedCarCompany]![_selectedCarName]!
-                        .map((carYear) {
-                        return DropdownMenuItem<String>(
-                          value: carYear,
-                          child: Text(carYear),
-                        );
-                      }).toList(),
-                isExpanded: true, // 가로 화면 꽉 채우기
-              ),
+            _buildDropdown<String>(
+              hint: '연식을 선택하세요.',
+              value: _selectedCarYear,
+              items: _selectedCarName == null
+                  ? []
+                  : _carData[_selectedCarCompany]![_selectedCarName]!
+                      .map((carYear) {
+                      return DropdownMenuItem<String>(
+                        value: carYear,
+                        child: Text(carYear),
+                      );
+                    }).toList(),
+              onChanged: (newValue) {
+                setState(() {
+                  _selectedCarYear = newValue;
+                });
+              },
             ),
-            SizedBox(height: 10),
             Container(
               width: double.infinity,
               margin: EdgeInsets.only(top: 24),

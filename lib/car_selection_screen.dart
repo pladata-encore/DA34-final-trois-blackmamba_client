@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drivetalk/home_screen.dart';
+import 'package:intl/intl.dart'; // For date formatting
+import 'package:http/http.dart' as http;
+import 'dart:convert'; // For JSON encoding and decoding
 
 class CarSelectionScreen extends StatefulWidget {
   const CarSelectionScreen({super.key});
@@ -13,19 +16,104 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
   String? _selectedCarCompany;
   String? _selectedCarName;
   String? _selectedCarYear;
+  String? uid;
+  int? cid;
+  Map<String, Map<String, List<String>>> _carData = {};
+  String? checkCarListDt;
 
-  final Map<String, Map<String, List<String>>> _carData = {
-    '현대': {
-      '아반떼': ['2004-2015', '2005', '2006'],
-      '그랜저': ['2004', '2005', '2006'],
-      '포터': ['2004', '2005', '2006']
-    },
-    '폭스바겐': {
-      '골프': ['2004', '2005', '2006'],
-      '티구안': ['2004', '2005', '2006'],
-      '파사트': ['2004', '2005', '2006']
-    },
-  };
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    uid = prefs.getString('uid');
+    cid = prefs.getInt('cid');
+    checkCarListDt = prefs.getString('checkCarListDt');
+    _carData = _decodeCarData(prefs.getString('carData') ?? '{}');
+
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    if (checkCarListDt != today) {
+      await _updateCarData();
+    }
+
+    if (cid != null && cid != 1) {
+      await _loadCarDetails(cid!);
+    }
+    setState(() {});
+  }
+
+  Future<void> _updateCarData() async {
+    // Call API to get car data
+    Map<String, Map<String, List<String>>> newCarData = await getCarMenuList();
+    setState(() {
+      _carData = newCarData;
+    });
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('carData', _encodeCarData(_carData));
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    await prefs.setString('checkCarListDt', today);
+  }
+
+  Future<void> _loadCarDetails(int cid) async {
+    // Call API to get car details
+    Map<String, String> carDetails = await getCar(cid);
+    setState(() {
+      _selectedCarCompany = _truncateString(carDetails['company'], 10);
+      _selectedCarName = _truncateString(carDetails['name'], 10);
+      _selectedCarYear = _truncateString(carDetails['year'], 15);
+    });
+  }
+
+  Future<Map<String, Map<String, List<String>>>> getCarMenuList() async {
+    final response = await http.get(Uri.parse('http://10.0.2.2:8000/carmenu'));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return data.map((key, value) => MapEntry(
+          key,
+          (value as Map<String, dynamic>).map((key, value) => MapEntry(key,
+              (value as List<dynamic>).map((e) => e as String).toList()))));
+    } else {
+      throw Exception('Failed to load car menu');
+    }
+  }
+
+  Future<Map<String, String>> getCar(int cid) async {
+    final response =
+        await http.get(Uri.parse('http://10.0.2.2:8000/cars/$cid'));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return {
+        'company': _truncateString(data['company'], 10),
+        'name': _truncateString(data['name'], 10),
+        'year': _truncateString(data['year'], 15)
+      };
+    } else {
+      throw Exception('Failed to load car details');
+    }
+  }
+
+  String _truncateString(String? str, int maxLength) {
+    if (str == null) return '';
+    return str.length > maxLength ? str.substring(0, maxLength) : str;
+  }
+
+  String _encodeCarData(Map<String, Map<String, List<String>>> carData) {
+    return jsonEncode(carData);
+  }
+
+  Map<String, Map<String, List<String>>> _decodeCarData(String data) {
+    final decodedData = jsonDecode(data) as Map<String, dynamic>;
+    return decodedData.map((key, value) => MapEntry(
+        key,
+        (value as Map<String, dynamic>).map((key, value) => MapEntry(
+            key, (value as List<dynamic>).map((e) => e as String).toList()))));
+  }
 
   Future<void> _saveSelection() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();

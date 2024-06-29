@@ -2,7 +2,6 @@ import 'package:drivetalk/car_selection_screen.dart';
 import 'package:drivetalk/talk_screen.dart';
 import 'package:drivetalk/utterance_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -26,31 +25,7 @@ class BasicScreen extends StatefulWidget {
 }
 
 class _BasicScreenState extends State<BasicScreen> {
-  int bottomNavIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    initializeUid();
-  }
-
-  Future<void> initializeUid() async {
-    int uid = await getUid();
-    setState(() {
-      bottomNavIndex = uid;
-    });
-  }
-
-  Future<int> getUid() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    int? uid = prefs.getInt('uid');
-    if (uid == null) {
-      return 2;
-    } else {
-      return 0;
-    }
-  }
-
+  var bottomNavIndex = 0;
   @override
   Widget build(BuildContext context) {
     return Scaffold(

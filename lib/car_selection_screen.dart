@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:drivetalk/device_service.dart';
 import 'package:drivetalk/home_screen.dart';
-import 'package:intl/intl.dart'; // For date formatting
-import 'package:http/http.dart' as http;
-import 'dart:convert'; // For JSON encoding and decoding
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io'; // For Platform check
 
 class CarSelectionScreen extends StatefulWidget {
   const CarSelectionScreen({super.key});
@@ -13,119 +15,248 @@ class CarSelectionScreen extends StatefulWidget {
 }
 
 class _CarSelectionScreenState extends State<CarSelectionScreen> {
+  bool _noCarSelected = false;
   String? _selectedCarCompany;
   String? _selectedCarName;
-  String? _selectedCarYear;
-  String? uid;
-  int? cid;
-  Map<String, Map<String, List<String>>> _carData = {};
-  String? checkCarListDt;
+  CarInfo? _selectedCarInfo;
+
+  static const String nullKeyword = "null"; // Placeholder for null values
 
   @override
   void initState() {
     super.initState();
-    _loadPreferences();
+    _initializeSelection();
   }
 
-  Future<void> _loadPreferences() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    uid = prefs.getString('uid');
-    cid = prefs.getInt('cid');
-    checkCarListDt = prefs.getString('checkCarListDt');
-    _carData = _decodeCarData(prefs.getString('carData') ?? '{}');
-
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-    if (checkCarListDt != today) {
-      await _updateCarData();
-    }
-
-    if (cid != null && cid != 1) {
-      await _loadCarDetails(cid!);
-    }
+  Future<void> _initializeSelection() async {
+    await _fetchCarMenuList();
+    await _loadSelection();
     setState(() {});
   }
 
-  Future<void> _updateCarData() async {
-    // Call API to get car data
-    Map<String, Map<String, List<String>>> newCarData = await getCarMenuList();
-    setState(() {
-      _carData = newCarData;
-    });
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString('carData', _encodeCarData(_carData));
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    await prefs.setString('checkCarListDt', today);
-  }
+  Future<String> _getUserAgent() async {
+    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+    String userAgent;
 
-  Future<void> _loadCarDetails(int cid) async {
-    // Call API to get car details
-    Map<String, String> carDetails = await getCar(cid);
-    setState(() {
-      _selectedCarCompany = _truncateString(carDetails['company'], 10);
-      _selectedCarName = _truncateString(carDetails['name'], 10);
-      _selectedCarYear = _truncateString(carDetails['year'], 15);
-    });
-  }
-
-  Future<Map<String, Map<String, List<String>>>> getCarMenuList() async {
-    final response = await http.get(Uri.parse('http://10.0.2.2:8000/carmenu'));
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return data.map((key, value) => MapEntry(
-          key,
-          (value as Map<String, dynamic>).map((key, value) => MapEntry(key,
-              (value as List<dynamic>).map((e) => e as String).toList()))));
+    if (Platform.isAndroid) {
+      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      userAgent =
+          "Mozilla/5.0 (Linux; Android ${androidInfo.version.release}; ${androidInfo.model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${androidInfo.version.sdkInt} Mobile Safari/537.36";
+    } else if (Platform.isIOS) {
+      IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+      userAgent =
+          "Mozilla/5.0 (iPhone; CPU iPhone OS ${iosInfo.systemVersion.replaceAll('.', '_')} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${iosInfo.systemVersion} Mobile/${iosInfo.identifierForVendor} Safari/604.1";
     } else {
-      throw Exception('Failed to load car menu');
+      userAgent =
+          "Mozilla/5.0 (compatible; MyApp/1.0; +http://example.com/bot)";
+    }
+
+    return userAgent;
+  }
+
+  Future<void> _fetchCarMenuList() async {
+    try {
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      deviceService.carData = await deviceService.getCarMenuList();
+      print("로드한 차량정보 : ${deviceService.carData}");
+    } catch (e) {
+      print("Failed to fetch car menu list: $e");
+      // Handle error (show a message to the user, etc.)
     }
   }
 
-  Future<Map<String, String>> getCar(int cid) async {
-    final response =
-        await http.get(Uri.parse('http://10.0.2.2:8000/cars/$cid'));
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return {
-        'company': _truncateString(data['company'], 10),
-        'name': _truncateString(data['name'], 10),
-        'year': _truncateString(data['year'], 15)
-      };
-    } else {
-      throw Exception('Failed to load car details');
+  Future<void> _loadSelection() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      _noCarSelected = prefs.getBool('noCarSelected') ?? false;
+      print("로드된 체크 : $_noCarSelected");
+      _selectedCarCompany = prefs.getString('selectedCarCompany') != nullKeyword
+          ? prefs.getString('selectedCarCompany')
+          : null;
+      print("로드된 제조사 : $_selectedCarCompany");
+      _selectedCarName = prefs.getString('selectedCarName') != nullKeyword
+          ? prefs.getString('selectedCarName')
+          : null;
+      print("로드된 차량 : $_selectedCarName");
+      String? jsonString = prefs.getString('selectedCarInfo');
+      if (jsonString != null) {
+        try {
+          Map<String, dynamic> carInfoMap = jsonDecode(jsonString);
+          _selectedCarInfo = CarInfo(carInfoMap['year'], carInfoMap['cid']);
+          print("로드된 카인포 : $_selectedCarInfo");
+        } catch (e) {
+          _selectedCarInfo = null;
+        }
+      }
+    } catch (e) {
+      print("Failed to load selection: $e");
+      // Handle error (show a message to the user, etc.)
     }
   }
 
-  String _truncateString(String? str, int maxLength) {
-    if (str == null) return '';
-    return str.length > maxLength ? str.substring(0, maxLength) : str;
-  }
+  Future<void> _saveSelection(BuildContext context) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('noCarSelected', _noCarSelected);
+      print("체크 $_noCarSelected가 sp에 저장됨");
+      await prefs.setString(
+          'selectedCarCompany', _selectedCarCompany ?? nullKeyword);
+      print("제조사 $_selectedCarCompany sp에 저장됨");
+      await prefs.setString('selectedCarName', _selectedCarName ?? nullKeyword);
+      print("차량 $_selectedCarName sp에 저장됨");
+      await prefs.setString(
+          'selectedCarYear', _selectedCarInfo?.year ?? nullKeyword);
+      String jsonString = jsonEncode(
+          {'year': _selectedCarInfo?.year, 'cid': _selectedCarInfo?.cid});
+      await prefs.setString('selectedCarInfo', jsonString);
+      print("카인포 $jsonString sp에 저장됨");
 
-  String _encodeCarData(Map<String, Map<String, List<String>>> carData) {
-    return jsonEncode(carData);
-  }
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      deviceService.cid = _selectedCarInfo?.cid ?? 1;
 
-  Map<String, Map<String, List<String>>> _decodeCarData(String data) {
-    final decodedData = jsonDecode(data) as Map<String, dynamic>;
-    return decodedData.map((key, value) => MapEntry(
-        key,
-        (value as Map<String, dynamic>).map((key, value) => MapEntry(
-            key, (value as List<dynamic>).map((e) => e as String).toList()))));
-  }
+      String userAgent = await _getUserAgent();
 
-  Future<void> _saveSelection() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString('selectedCarCompany', _selectedCarCompany ?? '');
-    await prefs.setString('selectedCarName', _selectedCarName ?? '');
-    await prefs.setString('selectedCarYear', _selectedCarYear ?? '');
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
-      );
+      if (deviceService.uid == null) {
+        await deviceService.getCarMenuList();
+        await deviceService.createDevice(userAgent, deviceService.cid!);
+      } else {
+        await deviceService.updateDevice(deviceService.cid!);
+      }
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen()),
+        );
+      }
+    } catch (e) {
+      print("Failed to save selection: $e");
+      // Handle error (show a message to the user, etc.)
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<DeviceService>(
+      builder: (context, deviceService, child) {
+        Map<String, Map<String, List<Map<String, dynamic>>>> carData =
+            deviceService.carData;
+        return Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: carData.isEmpty
+                ? Center(child: CircularProgressIndicator())
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(height: 40),
+                      Center(
+                        child: Image.asset(
+                          'assets/img/carselection.png',
+                          width: MediaQuery.of(context).size.width * 0.4,
+                          height: 100,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      SizedBox(height: 40),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Select the car you want to receive manual information for.',
+                          style: TextStyle(
+                            fontSize: 25,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                      CheckboxListTile(
+                        title: Text("Do not select a car"),
+                        value: _noCarSelected,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _noCarSelected = value ?? false;
+                            if (_noCarSelected) {
+                              _selectedCarCompany = null;
+                              _selectedCarName = null;
+                              _selectedCarInfo = null;
+                              deviceService.cid = 1;
+                            }
+                          });
+                        },
+                      ),
+                      _buildDropdown<String>(
+                        hint: 'Select Manufacturer',
+                        value: _selectedCarCompany,
+                        items: carData.keys.map((carCompany) {
+                          return DropdownMenuItem<String>(
+                            value: carCompany,
+                            child: Text(carCompany),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            _selectedCarCompany = newValue;
+                            _selectedCarName = null;
+                            _selectedCarInfo = null;
+                          });
+                        },
+                        enabled: !_noCarSelected,
+                      ),
+                      _buildDropdown<String>(
+                        hint: 'Select Car',
+                        value: _selectedCarName,
+                        items: _selectedCarCompany == null
+                            ? []
+                            : carData[_selectedCarCompany]!.keys.map((carName) {
+                                return DropdownMenuItem<String>(
+                                  value: carName,
+                                  child: Text(carName),
+                                );
+                              }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            _selectedCarName = newValue;
+                            _selectedCarInfo = null;
+                          });
+                        },
+                        enabled: !_noCarSelected,
+                      ),
+                      _buildDropdown<CarInfo>(
+                        hint: 'Select Year',
+                        value: _selectedCarInfo,
+                        items: _selectedCarName == null
+                            ? []
+                            : carData[_selectedCarCompany]![_selectedCarName]!
+                                .map((carInfo) {
+                                return DropdownMenuItem<CarInfo>(
+                                  value:
+                                      CarInfo(carInfo['year'], carInfo['cid']),
+                                  child: Text(carInfo['year'].toString()),
+                                );
+                              }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            _selectedCarInfo = newValue;
+                            deviceService.cid = newValue?.cid ?? 1;
+                          });
+                        },
+                        enabled: !_noCarSelected,
+                      ),
+                      Container(
+                        width: double.infinity,
+                        margin: EdgeInsets.only(top: 24),
+                        child: ElevatedButton(
+                          onPressed: () => _saveSelection(context),
+                          child: Text('Confirm'),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildDropdown<T>({
@@ -133,111 +264,16 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
     required T? value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
+    required bool enabled,
   }) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: DropdownButton<T>(
         hint: Text(hint),
         value: value,
-        onChanged: onChanged,
+        onChanged: enabled ? onChanged : null,
         items: items,
         isExpanded: true,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 40),
-            Center(
-              child: Image.asset(
-                'assets/img/carselection.png',
-                width: MediaQuery.of(context).size.width * 0.4,
-                height: 100,
-                fit: BoxFit.cover,
-              ),
-            ),
-            SizedBox(height: 40),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '메뉴얼 정보를 안내 받을 차량을 선택하세요.',
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-            _buildDropdown<String>(
-              hint: '제조사를 선택하세요.',
-              value: _selectedCarCompany,
-              items: _carData.keys.map((carCompany) {
-                return DropdownMenuItem<String>(
-                  value: carCompany,
-                  child: Text(carCompany),
-                );
-              }).toList(),
-              onChanged: (newValue) {
-                setState(() {
-                  _selectedCarCompany = newValue;
-                  _selectedCarName = null;
-                  _selectedCarYear = null;
-                });
-              },
-            ),
-            _buildDropdown<String>(
-              hint: '차량을 선택하세요.',
-              value: _selectedCarName,
-              items: _selectedCarCompany == null
-                  ? []
-                  : _carData[_selectedCarCompany]!.keys.map((carName) {
-                      return DropdownMenuItem<String>(
-                        value: carName,
-                        child: Text(carName),
-                      );
-                    }).toList(),
-              onChanged: (newValue) {
-                setState(() {
-                  _selectedCarName = newValue;
-                  _selectedCarYear = null;
-                });
-              },
-            ),
-            _buildDropdown<String>(
-              hint: '연식을 선택하세요.',
-              value: _selectedCarYear,
-              items: _selectedCarName == null
-                  ? []
-                  : _carData[_selectedCarCompany]![_selectedCarName]!
-                      .map((carYear) {
-                      return DropdownMenuItem<String>(
-                        value: carYear,
-                        child: Text(carYear),
-                      );
-                    }).toList(),
-              onChanged: (newValue) {
-                setState(() {
-                  _selectedCarYear = newValue;
-                });
-              },
-            ),
-            Container(
-              width: double.infinity,
-              margin: EdgeInsets.only(top: 24),
-              child: ElevatedButton(
-                onPressed: _saveSelection,
-                child: Text('확인'),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

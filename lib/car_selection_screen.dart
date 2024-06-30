@@ -1,11 +1,12 @@
 import 'dart:convert';
-import 'package:drivetalk/device_service.dart';
-import 'package:drivetalk/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io'; // For Platform check
+
+import 'package:drivetalk/device_service.dart';
+import 'package:drivetalk/home_screen.dart';
 
 class CarSelectionScreen extends StatefulWidget {
   const CarSelectionScreen({super.key});
@@ -58,7 +59,9 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
     try {
       final deviceService = Provider.of<DeviceService>(context, listen: false);
       deviceService.carData = await deviceService.getCarMenuList();
-      print("로드한 차량정보 : ${deviceService.carData}");
+      print("Loaded car data: ${deviceService.carData}");
+      print("Current cid value: ${deviceService.cid}");
+      print("Current uid value: ${deviceService.uid}");
     } catch (e) {
       print("Failed to fetch car menu list: $e");
       // Handle error (show a message to the user, etc.)
@@ -69,21 +72,21 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       _noCarSelected = prefs.getBool('noCarSelected') ?? false;
-      print("로드된 체크 : $_noCarSelected");
+      print("Loaded noCarSelected: $_noCarSelected");
       _selectedCarCompany = prefs.getString('selectedCarCompany') != nullKeyword
           ? prefs.getString('selectedCarCompany')
           : null;
-      print("로드된 제조사 : $_selectedCarCompany");
+      print("Loaded selectedCarCompany: $_selectedCarCompany");
       _selectedCarName = prefs.getString('selectedCarName') != nullKeyword
           ? prefs.getString('selectedCarName')
           : null;
-      print("로드된 차량 : $_selectedCarName");
+      print("Loaded selectedCarName: $_selectedCarName");
       String? jsonString = prefs.getString('selectedCarInfo');
       if (jsonString != null) {
         try {
           Map<String, dynamic> carInfoMap = jsonDecode(jsonString);
           _selectedCarInfo = CarInfo(carInfoMap['year'], carInfoMap['cid']);
-          print("로드된 카인포 : $_selectedCarInfo");
+          print("Loaded carInfo: $_selectedCarInfo");
         } catch (e) {
           _selectedCarInfo = null;
         }
@@ -97,21 +100,21 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
   Future<void> _saveSelection(BuildContext context) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
       await prefs.setBool('noCarSelected', _noCarSelected);
-      print("체크 $_noCarSelected가 sp에 저장됨");
+      print("Saved noCarSelected: $_noCarSelected");
       await prefs.setString(
           'selectedCarCompany', _selectedCarCompany ?? nullKeyword);
-      print("제조사 $_selectedCarCompany sp에 저장됨");
+      print("Saved selectedCarCompany: $_selectedCarCompany");
       await prefs.setString('selectedCarName', _selectedCarName ?? nullKeyword);
-      print("차량 $_selectedCarName sp에 저장됨");
+      print("Saved selectedCarName: $_selectedCarName");
       await prefs.setString(
           'selectedCarYear', _selectedCarInfo?.year ?? nullKeyword);
       String jsonString = jsonEncode(
           {'year': _selectedCarInfo?.year, 'cid': _selectedCarInfo?.cid});
       await prefs.setString('selectedCarInfo', jsonString);
-      print("카인포 $jsonString sp에 저장됨");
+      print("Saved carInfo: $jsonString");
 
-      final deviceService = Provider.of<DeviceService>(context, listen: false);
       deviceService.cid = _selectedCarInfo?.cid ?? 1;
 
       String userAgent = await _getUserAgent();

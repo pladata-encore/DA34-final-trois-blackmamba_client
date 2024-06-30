@@ -1,10 +1,11 @@
 import 'package:dash_chat_2/dash_chat_2.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class TalkScreen extends StatefulWidget {
@@ -18,13 +19,27 @@ class _TalkScreenState extends State<TalkScreen> {
   bool _speechEnabled = false;
   String _lastWords = '';
   FlutterTts flutterTts = FlutterTts();
+  final Dio dio = Dio();
+  int skip = 0;
+  bool isLoadingMore = false;
+  int uid = 0;
 
   @override
   void initState() {
     super.initState();
     _initSpeech();
+    _loadUid();
     flutterTts.setLanguage("ko-KR");
-    flutterTts.setSpeechRate(2.0);
+    flutterTts.setSpeechRate(0.5);
+  }
+
+  Future<void> _loadUid() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      uid = prefs.getInt('uid') ?? 0;
+      print("로드한 uid는 $uid");
+    });
+    _loadMessages();
   }
 
   ChatUser user1 = ChatUser(
@@ -38,13 +53,45 @@ class _TalkScreenState extends State<TalkScreen> {
       lastName: 'switchup',
       profileImage: "assets/img/drivetalk_icon.png");
 
-  late List<ChatMessage> messages = <ChatMessage>[
-    ChatMessage(
-      text: '네, 말씀하세요.',
-      user: user2,
-      createdAt: DateTime.now(),
-    ),
-  ];
+  List<ChatMessage> messages = <ChatMessage>[];
+
+  Future<void> _loadMessages({bool loadMore = false}) async {
+    if (loadMore) {
+      setState(() {
+        isLoadingMore = true;
+      });
+    }
+
+    try {
+      var response = await dio.get(
+        'http://10.0.2.2:8000/messages',
+        queryParameters: {'uid': uid, 'skip': skip, 'limit': 30},
+      );
+
+      if (response.statusCode == 200) {
+        List<ChatMessage> newMessages = (response.data as List)
+            .map((json) => ChatMessage(
+                  text: json['text'],
+                  user: json['user_id'] == 1 ? user1 : user2,
+                  createdAt: DateTime.parse(json['created_at']),
+                ))
+            .toList();
+
+        setState(() {
+          if (loadMore) {
+            messages.addAll(newMessages);
+            isLoadingMore = false;
+          } else {
+            messages = newMessages;
+          }
+          skip += 30;
+        });
+        print("메시지 로드에 성공했습니다.");
+      }
+    } catch (e) {
+      print("Failed to load messages: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,45 +99,79 @@ class _TalkScreenState extends State<TalkScreen> {
       appBar: AppBar(
         title: const Text('대화창'),
       ),
-      body: DashChat(
-        currentUser: user1,
-        onSend: (ChatMessage m) {
-          setState(() {
-            messages.insert(0, m);
-          });
-          Future<String> data = sendMessageToServer(m.text);
-          data.then((value) {
-            setState(() {
-              messages.insert(
-                  0,
-                  ChatMessage(
-                    text: value,
-                    user: user2,
-                    createdAt: DateTime.now(),
-                  ));
-            });
-          });
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification scrollInfo) {
+          if (!isLoadingMore &&
+              scrollInfo.metrics.pixels == scrollInfo.metrics.maxScrollExtent) {
+            _loadMessages(loadMore: true);
+          }
+          return false;
         },
-        messages: messages,
-        inputOptions: InputOptions(leading: [
-          IconButton(
-              icon: Icon(Icons.mic,
-                  color: isListening ? Colors.red : Colors.black),
-              onPressed: () {
-                setState(() {
-                  isListening = !isListening;
-                  if (isListening == true) {
-                    print('음성인식 시작');
-                    _startListening();
-                  } else {
-                    print('음성인식 끝');
-                    _stopListening();
-                  }
-                });
-              }),
-        ]),
+        child: DashChat(
+          currentUser: user1,
+          onSend: (ChatMessage m) async {
+            setState(() {
+              messages.insert(0, m);
+            });
+            await _saveMessageToServer(m);
+            Future<String> data = sendMessageToServer(m.text);
+            data.then((value) {
+              setState(() {
+                ChatMessage replyMessage = ChatMessage(
+                  text: value,
+                  user: user2,
+                  createdAt: DateTime.now(),
+                );
+                messages.insert(0, replyMessage);
+                _saveMessageToServer(replyMessage);
+              });
+            });
+          },
+          messages: messages,
+          inputOptions: InputOptions(leading: [
+            IconButton(
+                icon: Icon(Icons.mic,
+                    color: isListening ? Colors.red : Colors.black),
+                onPressed: () {
+                  setState(() {
+                    isListening = !isListening;
+                    if (isListening == true) {
+                      print('음성인식 시작');
+                      _startListening();
+                    } else {
+                      print('음성인식 끝');
+                      _stopListening();
+                    }
+                  });
+                }),
+          ]),
+        ),
       ),
     );
+  }
+
+  Future<void> _saveMessageToServer(ChatMessage message) async {
+    var truncatedMessage =
+        message.text.length > 500 ? message.text.substring(0, 500) : message;
+
+    var data = {
+      // 'id': messages.length + 1,
+      'text': message.text,
+      'user_id': message.user.id == '1' ? 1 : 2,
+      'created_at': message.createdAt.toIso8601String(),
+      'uid': uid,
+    };
+    print("저장하는 메시지 내용은 $data");
+
+    try {
+      await dio.post(
+        'http://10.0.2.2:8000/messages',
+        data: data,
+      );
+      print("메시지 저장에 성공했습니다.");
+    } catch (e) {
+      print("Failed to save message: $e");
+    }
   }
 
   Future<String> sendMessageToServer(String message) async {
@@ -100,10 +181,8 @@ class _TalkScreenState extends State<TalkScreen> {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $openaiKey',
     };
-    var request = http.Request(
-        'POST', Uri.parse('https://api.openai.com/v1/chat/completions'));
-    request.body = json.encode({
-      "model": "gpt-4o",
+    var data = json.encode({
+      "model": "gpt-4",
       "messages": [
         {
           "role": "user",
@@ -111,20 +190,27 @@ class _TalkScreenState extends State<TalkScreen> {
         }
       ]
     });
-    request.headers.addAll(headers);
 
-    http.StreamedResponse response = await request.send();
+    try {
+      var response = await dio.post(
+        'https://api.openai.com/v1/chat/completions',
+        options: Options(headers: headers),
+        data: data,
+      );
 
-    if (response.statusCode == 200) {
-      String responseString = await response.stream.bytesToString();
-      Map<String, dynamic> jsonResponse = json.decode(responseString);
-      String result = jsonResponse['choices'] != null
-          ? jsonResponse['choices'][0]['message']['content']
-          : "저도 쟐 모르겠어요. 좀 더 열심히 공부할께요.";
-      print(responseString);
-      return result;
-    } else {
-      print(response.reasonPhrase);
+      if (response.statusCode == 200) {
+        Map<String, dynamic> jsonResponse = response.data;
+        String result = jsonResponse['choices'] != null
+            ? jsonResponse['choices'][0]['message']['content']
+            : "저도 잘 모르겠어요. 좀 더 열심히 공부할께요.";
+        print(response.data);
+        return result;
+      } else {
+        print(response.statusMessage);
+        return "ERROR";
+      }
+    } catch (e) {
+      print("Failed to send request: $e");
       return "ERROR";
     }
   }
@@ -162,25 +248,27 @@ class _TalkScreenState extends State<TalkScreen> {
       print("최종 인식된 문장: $_lastWords");
 
       setState(() {
-        messages.insert(
-            0,
-            ChatMessage(
-              text: _lastWords,
-              user: user1,
-              createdAt: DateTime.now(),
-            ));
+        ChatMessage userMessage = ChatMessage(
+          text: _lastWords,
+          user: user1,
+          createdAt: DateTime.now(),
+        );
+        messages.insert(0, userMessage);
+        _saveMessageToServer(userMessage);
+        print("$messages");
       });
 
       Future<String> data = sendMessageToServer(_lastWords);
       data.then((value) {
         setState(() {
-          messages.insert(
-              0,
-              ChatMessage(
-                text: value,
-                user: user2,
-                createdAt: DateTime.now(),
-              ));
+          ChatMessage replyMessage = ChatMessage(
+            text: value,
+            user: user2,
+            createdAt: DateTime.now(),
+          );
+          messages.insert(0, replyMessage);
+          _saveMessageToServer(replyMessage);
+          print("$messages");
         });
         flutterTts.speak(value);
       });

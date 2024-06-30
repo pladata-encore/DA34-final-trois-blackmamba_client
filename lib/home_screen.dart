@@ -1,14 +1,16 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drivetalk/car_selection_screen.dart';
 import 'package:drivetalk/talk_screen.dart';
 import 'package:drivetalk/utterance_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:drivetalk/device_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // 화면에 보이는 영역
     return SafeArea(
       top: true,
       bottom: false,
@@ -26,6 +28,28 @@ class BasicScreen extends StatefulWidget {
 
 class _BasicScreenState extends State<BasicScreen> {
   var bottomNavIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeScreen();
+  }
+
+  Future<void> _initializeScreen() async {
+    final deviceService = Provider.of<DeviceService>(context, listen: false);
+
+    // Load uid from SharedPreferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final uid = prefs.getInt('uid');
+    deviceService.uid = uid;
+
+    // Set the initial bottomNavIndex based on uid
+    print("Loaded uid value: ${deviceService.uid}");
+    setState(() {
+      bottomNavIndex = (deviceService.uid == null) ? 2 : 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -54,7 +78,7 @@ class _BasicScreenState extends State<BasicScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.chat),
-            label: '대화목록',
+            label: '채팅',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.directions_car),

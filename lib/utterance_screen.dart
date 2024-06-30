@@ -56,7 +56,15 @@ class UtteranceScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          SpeechScreen(initialText: '엔진오일 교환주기 알려줘'),
+                    ),
+                  );
+                },
                 child: Text('엔진오일 교환주기 알려줘'),
               ),
             ),

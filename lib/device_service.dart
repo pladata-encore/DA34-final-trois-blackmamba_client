@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Memo 데이터의 형식을 정해줍니다. 추후 isPinned, updatedAt 등의 정보도 저장할 수 있습니다.
 class Device {
@@ -59,7 +60,8 @@ class DeviceService extends ChangeNotifier {
   Future<void> createDevice(String userAgent, int cid) async {
     try {
       print("createDevice에서 넘겨받은 userAgent : $userAgent");
-      print("createDevice에서 넘겨받은 cid : $userAgent");
+      print("createDevice에서 넘겨받은 cid : $cid");
+
       final response = await _dio.post(
         'http://10.0.2.2:8000/devices',
         data: {'userAgent': userAgent, 'cid': cid},
@@ -72,6 +74,12 @@ class DeviceService extends ChangeNotifier {
         final data = response.data;
         uid = data['uid'];
         print("cid $cid를 담아 uid $uid로 디바이스 생성했습니다.");
+
+        // Save cid and uid to SharedPreferences
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('cid', cid);
+        await prefs.setInt('uid', uid!);
+        print("cid $cid와 uid $uid가 SharedPreferences에 저장되었습니다.");
       } else {
         print(
             "Failed to create device: ${response.statusCode} ${response.statusMessage}");
@@ -129,32 +137,4 @@ class CarInfo {
 
   @override
   int get hashCode => year.hashCode ^ cid.hashCode;
-}
-
-class Chat {
-  Chat({
-    required this.mid,
-    required this.uid,
-    required this.question,
-    required this.answer,
-    required this.createDttm,
-  });
-
-  int? mid;
-  int? uid;
-  String? question;
-  String? answer;
-  final createDttm;
-}
-
-// Chat 데이터는 모두 여기서 관리
-class ChatService extends ChangeNotifier {
-  List<Chat> chatList = [
-    Chat(
-        mid: 1,
-        uid: 1,
-        question: "전장이 뭐야?",
-        answer: "전장은 차의 길이에요.",
-        createDttm: DateTime.now()), // 더미(dummy) 데이터
-  ];
 }

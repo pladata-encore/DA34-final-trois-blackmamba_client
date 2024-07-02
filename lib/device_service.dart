@@ -38,7 +38,8 @@ class DeviceService extends ChangeNotifier {
   Future<Map<String, Map<String, List<Map<String, dynamic>>>>>
       getCarMenuList() async {
     try {
-      final response = await _dio.get('http://10.0.2.2:8000/carmenu');
+      final response = await _dio
+          .get('https://dn4gad2bda.ap-northeast-1.awsapprunner.com/carmenu');
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
@@ -63,7 +64,7 @@ class DeviceService extends ChangeNotifier {
       print("createDevice에서 넘겨받은 cid : $cid");
 
       final response = await _dio.post(
-        'http://10.0.2.2:8000/devices',
+        'https://dn4gad2bda.ap-northeast-1.awsapprunner.com/devices',
         data: {'userAgent': userAgent, 'cid': cid},
         options: Options(
           headers: {'Content-Type': 'application/json; charset=UTF-8'},
@@ -102,7 +103,7 @@ class DeviceService extends ChangeNotifier {
   Future<void> updateDevice(int cid) async {
     try {
       final response = await _dio.put(
-        'http://10.0.2.2:8000/devices/$uid',
+        'https://dn4gad2bda.ap-northeast-1.awsapprunner.com/$uid',
         data: {'cid': cid},
         options: Options(
           headers: {'Content-Type': 'application/json; charset=UTF-8'},

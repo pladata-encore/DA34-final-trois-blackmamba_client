@@ -12,11 +12,11 @@ class UtteranceScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 40),
+            SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                '아래의 버튼을 누르고 드라이브톡에게 질문해보세요.',
+                '아래의 버튼을 누르고\n드라이브톡에게 물어보세요.',
                 style: TextStyle(
                   fontSize: 25, // 폰트 크기
                   fontWeight: FontWeight.bold, // 폰트 두께
@@ -41,11 +41,11 @@ class UtteranceScreen extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(height: 40),
+            SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                '발화 예시',
+                '음성 명령 예시',
                 style: TextStyle(
                   fontSize: 20, // 폰트 크기
                   fontWeight: FontWeight.normal, // 폰트 두께
@@ -66,6 +66,38 @@ class UtteranceScreen extends StatelessWidget {
                   );
                 },
                 child: Text('엔진오일 교환주기 알려줘'),
+              ),
+            ),
+            SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          SpeechScreen(initialText: '뉴진스 하우스윗 틀어줘'),
+                    ),
+                  );
+                },
+                child: Text('뉴진스 하우스윗 틀어줘'),
+              ),
+            ),
+            SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          SpeechScreen(initialText: '성수동 햄버거 맛집 알려줘'),
+                    ),
+                  );
+                },
+                child: Text('성수동 햄버거 맛집 알려줘'),
               ),
             ),
           ],

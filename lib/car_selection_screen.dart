@@ -152,29 +152,28 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(height: 40),
                       Center(
                         child: Image.asset(
                           'assets/img/carselection.png',
-                          width: MediaQuery.of(context).size.width * 0.4,
-                          height: 100,
+                          width: MediaQuery.of(context).size.width * 0.8,
+                          height: 180,
                           fit: BoxFit.cover,
                         ),
                       ),
-                      SizedBox(height: 40),
+                      SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Text(
-                          'Select the car you want to receive manual information for.',
+                          '안내 받을 차량을 선택하세요.',
                           style: TextStyle(
-                            fontSize: 25,
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
                         ),
                       ),
                       CheckboxListTile(
-                        title: Text("Do not select a car"),
+                        title: Text("차량을 선택하지 않음"),
                         value: _noCarSelected,
                         onChanged: (bool? value) {
                           setState(() {
@@ -189,7 +188,7 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
                         },
                       ),
                       _buildDropdown<String>(
-                        hint: 'Select Manufacturer',
+                        hint: '제조사를 선택하세요.',
                         value: _selectedCarCompany,
                         items: carData.keys.map((carCompany) {
                           return DropdownMenuItem<String>(
@@ -207,7 +206,7 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
                         enabled: !_noCarSelected,
                       ),
                       _buildDropdown<String>(
-                        hint: 'Select Car',
+                        hint: '차량을 선택하세요.',
                         value: _selectedCarName,
                         items: _selectedCarCompany == null
                             ? []
@@ -226,7 +225,7 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
                         enabled: !_noCarSelected,
                       ),
                       _buildDropdown<CarInfo>(
-                        hint: 'Select Year',
+                        hint: '연식을 선택하세요.',
                         value: _selectedCarInfo,
                         items: _selectedCarName == null
                             ? []
@@ -251,7 +250,7 @@ class _CarSelectionScreenState extends State<CarSelectionScreen> {
                         margin: EdgeInsets.only(top: 24),
                         child: ElevatedButton(
                           onPressed: () => _saveSelection(context),
-                          child: Text('Confirm'),
+                          child: Text('확인'),
                         ),
                       ),
                     ],

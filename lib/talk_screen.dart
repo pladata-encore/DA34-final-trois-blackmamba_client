@@ -64,7 +64,7 @@ class _TalkScreenState extends State<TalkScreen> {
 
     try {
       var response = await dio.get(
-        'http://10.0.2.2:8000/messages',
+        'https://dn4gad2bda.ap-northeast-1.awsapprunner.com/messages',
         queryParameters: {'uid': uid, 'skip': skip, 'limit': 30},
       );
 
@@ -165,7 +165,7 @@ class _TalkScreenState extends State<TalkScreen> {
 
     try {
       await dio.post(
-        'http://10.0.2.2:8000/messages',
+        'https://dn4gad2bda.ap-northeast-1.awsapprunner.com/messages',
         data: data,
       );
       print("메시지 저장에 성공했습니다.");

@@ -6,6 +6,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class SpeechScreen extends StatefulWidget {
   final String? initialText;
@@ -25,29 +27,54 @@ class _SpeechScreenState extends State<SpeechScreen> {
   String backButtonText = "뒤로가기";
   Timer? countdownTimer;
   int uid = 0;
+  String selectedCarName = "";
+  bool isMusicPlaying = false;
+  YoutubePlayerController? _youtubePlayerController;
+  final List<String> musicKeywords = [
+    "틀어줘",
+    "틀어 줘",
+    "들려줘",
+    "들려 줘",
+    "재생해줘",
+    "음악",
+    "재생",
+    "노래",
+    "영상"
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadUid().then((_) {
-      flutterTts.setLanguage("ko-KR");
-      flutterTts.setSpeechRate(0.5);
-
-      if (widget.initialText != null) {
-        recognizedText = widget.initialText!;
-        _sendRequestToGPT(recognizedText);
-        _saveMessageToServer(recognizedText, 1); // Save user1's message
-      } else {
-        _speak("네, 말씀하세요");
-      }
-    });
+    _initializeSettings();
   }
 
-  Future<void> _loadUid() async {
+  @override
+  void dispose() {
+    countdownTimer?.cancel();
+    _youtubePlayerController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeSettings() async {
+    await _loadDevice();
+    await flutterTts.setLanguage("ko-KR");
+    await flutterTts.setSpeechRate(0.5);
+
+    if (widget.initialText != null) {
+      recognizedText = widget.initialText!;
+      _handleRecognizedText(recognizedText);
+    } else {
+      _speak("네, 말씀하세요");
+    }
+  }
+
+  Future<void> _loadDevice() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       uid = prefs.getInt('uid') ?? 0;
+      selectedCarName = prefs.getString('selectedCarName') ?? "";
       print("로드한 uid는 $uid");
+      print("로드한 selectedCarName은 $selectedCarName");
     });
   }
 
@@ -58,10 +85,15 @@ class _SpeechScreenState extends State<SpeechScreen> {
       print('TTS 방송이 끝납니다.');
       if (text == "네, 말씀하세요") {
         _listen();
-      } else {
+      } else if (!isMusicPlaying) {
         _startCountdown();
       }
     });
+  }
+
+  void _stopTTS() async {
+    await flutterTts.stop();
+    print('TTS 방송이 중단되었습니다.');
   }
 
   void _listen() async {
@@ -72,8 +104,7 @@ class _SpeechScreenState extends State<SpeechScreen> {
           recognizedText = result.recognizedWords;
         });
         if (result.finalResult) {
-          _sendRequestToGPT(recognizedText);
-          _saveMessageToServer(recognizedText, 1); // Save user1's message
+          _handleRecognizedText(recognizedText);
         }
       });
     } else {
@@ -83,68 +114,113 @@ class _SpeechScreenState extends State<SpeechScreen> {
     }
   }
 
-  Future<void> _sendRequestToGPT(String message) async {
+  void _handleRecognizedText(String text) {
+    if (_containsMusicKeyword(text)) {
+      String searchText = _removeMusicKeywords(text).trim();
+      _playMusic(searchText);
+    } else {
+      _sendRequestToAPI(text);
+      _saveMessageToServer(text, 1);
+    }
+  }
+
+  bool _containsMusicKeyword(String text) {
+    return musicKeywords.any((keyword) => text.contains(keyword));
+  }
+
+  String _removeMusicKeywords(String text) {
+    return musicKeywords.fold(
+        text, (prev, keyword) => prev.replaceAll(keyword, ""));
+  }
+
+  Future<void> _playMusic(String query) async {
     await dotenv.load(fileName: ".env");
-    String? openaiKey = dotenv.env['OPENAI_API_KEY'];
-
-    var headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $openaiKey',
-    };
-
-    var data = json.encode({
-      "model": "gpt-4",
-      "messages": [
-        {
-          "role": "user",
-          "content": message,
-        }
-      ]
-    });
+    String? youtubeApiKey = dotenv.env['YOUTUBE_API_KEY'];
+    var url =
+        'https://www.googleapis.com/youtube/v3/search?part=snippet&q=$query&type=video&key=$youtubeApiKey';
 
     try {
-      var response = await dio.post(
-        'https://api.openai.com/v1/chat/completions',
-        options: Options(headers: headers),
-        data: data,
-      );
-
+      var response = await dio.get(url);
       if (response.statusCode == 200) {
-        Map<String, dynamic> jsonResponse = response.data;
-        setState(() {
-          responseText =
-              jsonResponse['choices'][0]['message']['content'].trim();
+        var jsonResponse = response.data;
+        var videoId = jsonResponse['items'][0]['id']['videoId'];
+        var videoTitle = jsonResponse['items'][0]['snippet']['title']
+            .replaceAll(RegExp(r'[^\w\s]|[\d]'), '');
+
+        _youtubePlayerController = YoutubePlayerController(
+          initialVideoId: videoId,
+          flags: YoutubePlayerFlags(autoPlay: true, mute: false),
+        );
+
+        _youtubePlayerController!.addListener(() {
+          if (_youtubePlayerController!.value.playerState ==
+              PlayerState.ended) {
+            _startCountdown();
+          }
         });
+
+        setState(() {
+          isMusicPlaying = true;
+          responseText = "$videoTitle 을(를) 재생합니다.";
+        });
+
         print('TTS 방송이 시작됩니다.');
         await flutterTts.speak(responseText);
         flutterTts.setCompletionHandler(() {
           print('TTS 방송이 끝납니다.');
-          _startCountdown();
+          _saveMessageToServer(responseText, 2);
         });
-        _saveMessageToServer(responseText, 2); // Save user2's message
       } else {
+        print("Failed to load video.");
+      }
+    } catch (e) {
+      print("Failed to load video: $e");
+    }
+  }
+
+  Future<void> _stopMusic() async {
+    _youtubePlayerController?.pause();
+    setState(() {
+      isMusicPlaying = false;
+    });
+    _navigateBack();
+  }
+
+  Future<void> _sendRequestToAPI(String query) async {
+    var url =
+        'https://2tcihkmmep.ap-northeast-1.awsapprunner.com/query?query=$query';
+
+    try {
+      var response = await dio.get(url);
+      if (response.statusCode == 200) {
+        var jsonResponse = response.data;
         setState(() {
-          responseText = "저도 잘 모르겠어요. 좀 더 열심히 공부할께요.";
+          responseText = jsonResponse['answer'].trim();
         });
-        print('TTS 방송이 시작됩니다.');
-        await flutterTts.speak("저도 잘 모르겠어요. 좀 더 열심히 공부할께요.");
-        flutterTts.setCompletionHandler(() {
-          print('TTS 방송이 끝납니다.');
-          _startCountdown();
-        });
+      } else {
+        _handleAPIFailure();
       }
     } catch (e) {
       print("Failed to send request: $e");
-      setState(() {
-        responseText = "저도 잘 모르겠어요. 좀 더 열심히 공부할께요.";
-      });
-      print('TTS 방송이 시작됩니다.');
-      await flutterTts.speak("저도 잘 모르겠어요. 좀 더 열심히 공부할께요.");
-      flutterTts.setCompletionHandler(() {
-        print('TTS 방송이 끝납니다.');
-        _startCountdown();
-      });
+      _handleAPIFailure();
     }
+
+    print('TTS 방송이 시작됩니다.');
+    await flutterTts.speak(responseText);
+    flutterTts.setCompletionHandler(() {
+      print('TTS 방송이 끝납니다.');
+      if (!isMusicPlaying) {
+        _startCountdown();
+      }
+    });
+
+    _saveMessageToServer("$selectedCarName $responseText", 2);
+  }
+
+  void _handleAPIFailure() {
+    setState(() {
+      responseText = "저도 잘 모르겠어요. 좀 더 열심히 공부할께요.";
+    });
   }
 
   Future<void> _saveMessageToServer(String message, int userId) async {
@@ -157,13 +233,13 @@ class _SpeechScreenState extends State<SpeechScreen> {
       'created_at': DateTime.now().toIso8601String(),
       'uid': uid,
     };
+
     print("저장하는 메시지 내용은 $data");
 
     try {
       await dio.post(
-        'http://10.0.2.2:8000/messages',
-        data: data,
-      );
+          'https://dn4gad2bda.ap-northeast-1.awsapprunner.com/messages',
+          data: data);
       print("메시지 저장에 성공했습니다.");
     } catch (e) {
       print("Failed to save message: $e");
@@ -194,10 +270,9 @@ class _SpeechScreenState extends State<SpeechScreen> {
     Navigator.of(context).pop();
   }
 
-  @override
-  void dispose() {
-    countdownTimer?.cancel();
-    super.dispose();
+  void _onBackButtonPressed() {
+    _stopTTS();
+    _navigateBack();
   }
 
   Widget _buildChatBubble(
@@ -211,11 +286,10 @@ class _SpeechScreenState extends State<SpeechScreen> {
           color: backgroundColor,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.black,
+        child: MarkdownBody(
+          data: text,
+          styleSheet: MarkdownStyleSheet(
+            p: TextStyle(fontSize: 16, color: Colors.black),
           ),
         ),
       ),
@@ -228,31 +302,65 @@ class _SpeechScreenState extends State<SpeechScreen> {
       appBar: AppBar(
         title: Text("음성 인식"),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text(
-              "네, 말씀하세요",
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Text(
+                  "네, 말씀하세요",
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                SizedBox(height: 20),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildChatBubble(recognizedText, Colors.grey.shade200,
+                            Alignment.centerLeft),
+                        SizedBox(height: 20),
+                        _buildChatBubble(responseText, Colors.blue.shade100,
+                            Alignment.centerRight),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _onBackButtonPressed,
+                  child: Text(backButtonText),
+                ),
+              ],
+            ),
+          ),
+          if (isMusicPlaying)
+            Positioned(
+              bottom: 16.0,
+              right: 16.0,
+              child: FloatingActionButton(
+                onPressed: _stopMusic,
+                child: Icon(Icons.stop),
               ),
             ),
-            SizedBox(height: 20),
-            _buildChatBubble(
-                recognizedText, Colors.grey.shade200, Alignment.centerLeft),
-            SizedBox(height: 20),
-            _buildChatBubble(
-                responseText, Colors.blue.shade100, Alignment.centerRight),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _navigateBack,
-              child: Text(backButtonText),
+          if (isMusicPlaying && _youtubePlayerController != null)
+            Positioned(
+              bottom: 70.0,
+              left: 0.0,
+              right: 0.0,
+              child: Container(
+                height: 200.0,
+                child: YoutubePlayer(
+                  controller: _youtubePlayerController!,
+                  showVideoProgressIndicator: true,
+                ),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
